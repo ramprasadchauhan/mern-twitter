@@ -63,3 +63,33 @@ export const followUnfollowUser = async (req, res, next) => {
     next(error);
   }
 };
+
+export const getSuggestedUsers = async (req, res, next) => {
+  try {
+    // exclude to self and followed user
+    const userId = req.user._id;
+    const userFollowedByMe = await User.findById(userId).select("following");
+    const users = await User.aggregate([
+      {
+        $match: {
+          _id: { $ne: userId },
+        },
+      },
+      {
+        $sample: { size: 10 },
+      },
+    ]);
+    const filtedUsers = users.filter(
+      (user) => !userFollowedByMe.following.includes(user._id)
+    );
+    const suggestedUser = filtedUsers.slice(0, 4);
+    suggestedUser.forEach((user) => (user.password = null));
+    res.status(200).json({
+      success: true,
+      data: suggestedUser,
+    });
+  } catch (error) {
+    console.log("error in getSuggestedUser", error);
+    next(error);
+  }
+};
