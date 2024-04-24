@@ -1,6 +1,23 @@
 import Notification from "../models/notification.model.js";
 import User from "../models/user.model.js";
 import { errorHandler } from "../utils/errorHandler.js";
+import bcrypt from "bcryptjs";
+import { v2 as cloudinary } from "cloudinary";
+import { uploadImageToCloudinary } from "../utils/uploadImageToCloudinary.js";
+
+export const getAllUsers = async (req, res, next) => {
+  try {
+    const users = await User.find().select("-password");
+    res.status(200).json({
+      success: true,
+      message: "Users fetched successfully",
+      data: users,
+    });
+  } catch (error) {
+    console.log("error in getAllUser controller", error);
+    next(error);
+  }
+};
 
 export const getUserProfile = async (req, res, next) => {
   try {
@@ -90,6 +107,87 @@ export const getSuggestedUsers = async (req, res, next) => {
     });
   } catch (error) {
     console.log("error in getSuggestedUser", error);
+    next(error);
+  }
+};
+
+export const updateUser = async (req, res, next) => {
+  try {
+    let {
+      username,
+      fullName,
+      email,
+      bio,
+      link,
+      currentPassword,
+      newPassword,
+      profileImg,
+      coverImg,
+    } = req.body;
+    const userId = req.user._id;
+    let user = await User.findById(userId);
+    if (
+      (!currentPassword && newPassword) ||
+      (!newPassword && currentPassword)
+    ) {
+      return next(
+        errorHandler(404, "Please provide both current and new Password")
+      );
+    }
+    if (currentPassword && newPassword) {
+      const isMatched = await bcrypt.compare(currentPassword, user.password);
+      if (!isMatched) {
+        return next(errorHandler(400, "current password is incorrect"));
+      }
+      if (newPassword.length < 6) {
+        return next(errorHandler(400, "password length must be 6 charecter"));
+      }
+      user.password = await bcrypt.hashSync(newPassword, 10);
+    }
+    if (profileImg) {
+      if (user.profileImg) {
+        // Extract public ID from the URL and use it to delete the image
+        const publicId = user.profileImg.split("/").pop().split(".")[0];
+        await cloudinary.uploader.destroy(publicId, {
+          folder: process.env.FOLDER,
+          invalidate: true,
+        });
+      }
+      const uploadedResponse = await cloudinary.uploader.upload(profileImg, {
+        folder: process.env.FOLDER,
+      });
+      profileImg = uploadedResponse.secure_url;
+    }
+    if (coverImg) {
+      if (user.coverImg) {
+        // Extract public ID from the URL and use it to delete the image
+        const publicId = user.coverImg.split("/").pop().split(".")[0];
+        await cloudinary.uploader.destroy(publicId, {
+          folder: process.env.FOLDER,
+          invalidate: true,
+        });
+      }
+      const uploadedResponse = await cloudinary.uploader.upload(coverImg, {
+        folder: process.env.FOLDER,
+      });
+      coverImg = uploadedResponse.secure_url;
+    }
+    user.fullName = fullName || user.fullName;
+    user.email = email || user.email;
+    user.username = username || user.username;
+    user.bio = bio || user.bio;
+    user.link = link || user.link;
+    user.profileImg = profileImg || user.profileImg;
+    user.coverImg = coverImg || user.coverImg;
+    await user.save();
+    user.password = undefined;
+    return res.status(200).json({
+      success: true,
+      message: "User Updated successfully",
+      data: user,
+    });
+  } catch (error) {
+    console.log("error in updateUser controller", error);
     next(error);
   }
 };
